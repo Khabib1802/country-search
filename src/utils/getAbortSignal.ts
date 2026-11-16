@@ -1,3 +1,9 @@
+let controller: AbortController | null = null;
+
 export const getAbortSignal = (): AbortSignal => {
-  throw new Error('Not Implemented');
+  if (controller) {
+    controller.abort();
+  }
+  controller = new AbortController();
+  return controller.signal;
 };
