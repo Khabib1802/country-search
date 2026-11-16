@@ -82,4 +82,36 @@ describe('debounce', () => {
 
     expect(callback).toHaveBeenCalledWith('spain', 10);
   });
+
+  it('should cancel pending callback execution when cancel is called', () => {
+    const callback = vi.fn();
+    const debouncedCallback = debounce(callback, 500);
+
+    debouncedCallback();
+    debouncedCallback.cancel();
+
+    vi.advanceTimersByTime(500);
+
+    expect(callback).not.toHaveBeenCalled();
+  });
+
+  it('should allow calling debounced function again after cancel', () => {
+    const callback = vi.fn();
+    const debouncedCallback = debounce(callback, 500);
+
+    debouncedCallback();
+    debouncedCallback.cancel();
+    debouncedCallback();
+
+    vi.advanceTimersByTime(500);
+
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
+  it('should not throw when cancel is called without an active timer', () => {
+    const callback = vi.fn();
+    const debouncedCallback = debounce(callback, 500);
+
+    expect(() => debouncedCallback.cancel()).not.toThrow();
+  });
 });
