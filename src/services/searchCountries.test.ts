@@ -8,6 +8,7 @@ describe('searchCountries', () => {
   beforeEach(() => vi.stubGlobal('fetch', fetchMock));
   afterEach(() => {
     vi.resetAllMocks();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -91,7 +92,10 @@ describe('searchCountries', () => {
 
     await searchCountries('croatia', signal);
 
-    expect(fetchMock).toHaveBeenCalledWith('https://countries.dev/name/croatia', { signal });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://countries.dev/name/croatia',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('encodes query parameters in the url', async () => {
@@ -106,6 +110,75 @@ describe('searchCountries', () => {
 
     await searchCountries('south korea', signal);
 
-    expect(fetchMock).toHaveBeenCalledWith('https://countries.dev/name/south%20korea', { signal });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://countries.dev/name/south%20korea',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('passes a combined AbortSignal different from userSignal to fetch', async () => {
+    const userSignal = new AbortController().signal;
+
+    fetchMock.mockResolvedValue(new Response(JSON.stringify([]), { status: 200 }));
+
+    await searchCountries('albania', userSignal);
+
+    const receivedSignal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    expect(receivedSignal).not.toBe(userSignal);
+  });
+
+  it('aborts the combined signal when userController.abort() is called', async () => {
+    const userController = new AbortController();
+
+    fetchMock.mockImplementation(
+      (_url: string, { signal }: { signal: AbortSignal }) =>
+        new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+    );
+
+    const promise = searchCountries('albania', userController.signal);
+
+    const receivedSignal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+
+    expect(receivedSignal.aborted).toBe(false);
+
+    userController.abort();
+
+    expect(receivedSignal.aborted).toBe(true);
+
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('aborts with TimeoutError when timeout expires', async () => {
+    const userController = new AbortController();
+    const timeoutController = new AbortController();
+
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeoutController.signal);
+
+    fetchMock.mockImplementation(
+      (_url: string, { signal }: { signal: AbortSignal }) =>
+        new Promise((_, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+        }),
+    );
+
+    const promise = searchCountries('albania', userController.signal);
+
+    const receivedSignal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+
+    expect(receivedSignal.aborted).toBe(false);
+
+    timeoutController.abort(new DOMException('The operation timed out', 'TimeoutError'));
+
+    expect(receivedSignal.aborted).toBe(true);
+    expect(receivedSignal.reason).toBeInstanceOf(DOMException);
+    expect(receivedSignal.reason.name).toBe('TimeoutError');
+
+    await expect(promise).rejects.toMatchObject({
+      name: 'TimeoutError',
+    });
   });
 });
